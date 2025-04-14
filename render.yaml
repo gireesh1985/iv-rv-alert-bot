@@ -1,0 +1,8 @@
+
+services:
+  - type: cron
+    name: iv-rv-drift-scanner
+    env: python
+    schedule: "*/5 * * * *"
+    buildCommand: ""
+    startCommand: "python main.py"
