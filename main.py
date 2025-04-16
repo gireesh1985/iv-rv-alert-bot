@@ -1,6 +1,5 @@
 
 import requests
-import time
 from bs4 import BeautifulSoup
 import pandas as pd
 
@@ -64,11 +63,9 @@ def scan_iv_rv(symbol):
             send_telegram_alert(message)
 
 def main():
-    while True:
-        print("🔄 Scanning IV-RV...")
-        scan_iv_rv("NIFTY")
-        scan_iv_rv("BANKNIFTY")
-        time.sleep(300)
+    print("🔄 Scanning IV-RV once...")
+    scan_iv_rv("NIFTY")
+    scan_iv_rv("BANKNIFTY")
 
 if __name__ == "__main__":
     main()
