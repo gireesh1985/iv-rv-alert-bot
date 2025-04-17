@@ -1,11 +1,11 @@
 import datetime
 import pandas as pd
-from nsepython import nse_optionchain_scrapper, nsefetch
-import telegram
-import asyncio
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import telegram
+import asyncio
+import os
 
 # Define the log function
 def log(msg):
@@ -33,14 +33,28 @@ def fetch_iv_rv_data(symbol="NIFTY"):
         session = create_session_with_retries()
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept-Language': 'en,gu;q=0.9,hi;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br'
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.nseindia.com',
+            'Connection': 'keep-alive'
         }
 
+        # Fetch cookies first
+        session.get("https://www.nseindia.com", headers=headers, timeout=10)
+
         # Fetch option chain data for IV
-        oc_data = nse_optionchain_scrapper(symbol)
+        oc_url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
+        response = session.get(oc_url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            error_msg = f"Failed to fetch option chain: HTTP {response.status_code}"
+            log(f"❌ {error_msg}")
+            asyncio.run(send_telegram_alert(error_msg, is_error=True))
+            return None, None
+        oc_data = response.json()
+
         if not oc_data or 'records' not in oc_data:
-            error_msg = "Failed to fetch option chain data"
+            error_msg = "Invalid option chain data"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
             return None, None
@@ -66,9 +80,16 @@ def fetch_iv_rv_data(symbol="NIFTY"):
             f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}"
             f"&from={start_date.strftime('%d-%m-%Y')}&to={end_date.strftime('%d-%m-%Y')}"
         )
-        historical_data = nsefetch(historical_url)
+        response = session.get(historical_url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            error_msg = f"Failed to fetch historical data: HTTP {response.status_code}"
+            log(f"❌ {error_msg}")
+            asyncio.run(send_telegram_alert(error_msg, is_error=True))
+            return None, None
+        historical_data = response.json()
+
         if not historical_data or 'data' not in historical_data:
-            error_msg = "Failed to fetch historical data"
+            error_msg = "Invalid historical data"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
             return None, None
