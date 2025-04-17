@@ -2,6 +2,7 @@ import datetime
 import pandas as pd
 from nsepython import nse_optionchain_scrapper, nsefetch
 import telegram
+import asyncio
 
 # Define the log function
 def log(msg):
@@ -74,12 +75,11 @@ async def send_alert(iv, rv):
         chat_id = "537459100"
         message = f"🚨 Alert: IV={iv:.2f}, RV={rv:.2f}, Spread={iv-rv:.2f}"
         await bot.send_message(chat_id=chat_id, text=message)
-        log(f"🚨 Alert sent: {message}")
+        log(f"🚨 Telegram alert sent: {message}")
     except Exception as e:
-        log(f"❌ Error sending alert: {str(e)}")
+        log(f"❌ Error sending Telegram alert: {str(e)}")
 
 def main():
-    import asyncio
     log("🔄 Starting IV-RV Scan")
     iv, rv = fetch_iv_rv_data(symbol="NIFTY")
     if iv is None or rv is None:
@@ -89,7 +89,7 @@ def main():
         asyncio.run(send_alert(iv, rv))
     else:
         log("No alert triggered")
-    log("✅ Scan completed.\n")
+    log("✅ Scan completed.")
 
 if __name__ == "__main__":
     log("🚀 Script started")
