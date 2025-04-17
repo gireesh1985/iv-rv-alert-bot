@@ -27,6 +27,17 @@ async def send_telegram_alert(message, is_error=False):
     except Exception as e:
         log(f"❌ Error sending Telegram alert: {str(e)}")
 
+def fetch_nse_cookies(session, headers):
+    try:
+        response = session.get("https://www.nseindia.com", headers=headers, timeout=5)
+        if response.status_code != 200:
+            log(f"❌ Failed to fetch cookies: HTTP {response.status_code}")
+            return False
+        return True
+    except Exception as e:
+        log(f"❌ Error fetching cookies: {str(e)}")
+        return False
+
 def fetch_iv_rv_data(symbol="BANKNIFTY"):
     try:
         log("🔄 Fetching IV-RV data...")
@@ -41,9 +52,13 @@ def fetch_iv_rv_data(symbol="BANKNIFTY"):
         }
 
         # Fetch cookies
-        session.get("https://www.nseindia.com", headers=headers, timeout=10)
+        if not fetch_nse_cookies(session, headers):
+            error_msg = "Failed to initialize session cookies"
+            log(f"❌ {error_msg}")
+            asyncio.run(send_telegram_alert(error_msg, is_error=True))
+            return None, None, None
 
-        # Fetch option chain data for IV and OI
+        # Fetch option chain data
         oc_url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
         response = session.get(oc_url, headers=headers, timeout=10)
         if response.status_code != 200:
@@ -111,7 +126,7 @@ def fetch_iv_rv_data(symbol="BANKNIFTY"):
 
 def should_alert(iv, rv, threshold=5):
     try:
-        log(f Roberta Grok created by xAI f"🔄 Checking if alert conditions are met...")
+        log(f"🔄 Checking if alert conditions are met...")
         if iv is None or rv is None:
             log("⚠️ Missing data, skipping this cycle.")
             return False
