@@ -7,6 +7,7 @@ def log(msg):
 
 def fetch_iv_rv_data():
     try:
+        log("🔄 Fetching IV-RV data...")  # Log to confirm fetching data is triggered
         # Replace with your actual IV/RV fetching logic
         iv = 22.5  # Placeholder
         rv = 17.8  # Placeholder
@@ -18,6 +19,7 @@ def fetch_iv_rv_data():
 
 def should_alert(iv, rv, threshold=5):
     try:
+        log(f"🔄 Checking if alert conditions are met...")  # Log when checking alert conditions
         if iv is None or rv is None:
             log("⚠️ Missing data, skipping this cycle.")
             return False
@@ -35,6 +37,7 @@ def should_alert(iv, rv, threshold=5):
 
 def send_alert(iv, rv):
     try:
+        log(f"🚨 Preparing to send alert for IV={iv}, RV={rv}")  # Log when preparing alert
         # Replace with actual Telegram or email logic
         log(f"🚨 Sending Alert: IV={iv}, RV={rv}")
     except Exception as e:
@@ -63,3 +66,4 @@ if __name__ == "__main__":
         except Exception as e:
             log(f"🔥 Critical error in main loop: {e}")
             time.sleep(60)
+
