@@ -10,7 +10,7 @@ def fetch_iv_rv_data():
         # Replace with your actual IV/RV fetching logic
         iv = 22.5  # Placeholder
         rv = 17.8  # Placeholder
-        log(f"Fetched IV: {iv}, RV: {rv}")
+        log(f"Fetched IV: {iv}, RV: {rv}")  # Log fetched data
         return iv, rv
     except Exception as e:
         log(f"❌ Error fetching IV/RV data: {e}")
@@ -43,13 +43,20 @@ def send_alert(iv, rv):
 def main():
     log("🔄 Starting IV-RV Scan")
     iv, rv = fetch_iv_rv_data()
+    if iv is None or rv is None:
+        log("⚠️ Data fetch failed. Skipping scan cycle.")
+        return  # Skip processing if no data
+
     if should_alert(iv, rv, threshold=5):
         send_alert(iv, rv)
+    else:
+        log("No alert triggered")
     log("✅ Scan completed.\n")
 
 if __name__ == "__main__":
     while True:
         try:
+            log("🔄 Running main loop")
             main()
             # Wait before next scan (optional: Render restarts anyway)
             time.sleep(60 * 15)  # 15 min wait if run as loop
