@@ -1,21 +1,53 @@
-import time
 import datetime
-import os
+import pandas as pd
+from nsepython import nse_optionchain_scrapper, nsefetch
+import telegram
 
+# Define the log function
 def log(msg):
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
-def fetch_iv_rv_data():
+def fetch_iv_rv_data(symbol="NIFTY"):
     try:
         log("🔄 Fetching IV-RV data...")
-        # Replace with actual fetching logic
-        iv = 25.0  # Test value to trigger alert
-        rv = 18.0  # Test value to trigger alert
-        log(f"Fetched IV: {iv}, RV: {rv}")
+        # Fetch option chain data for IV
+        oc_data = nse_optionchain_scrapper(symbol)
+        if not oc_data or 'records' not in oc_data:
+            log("❌ Failed to fetch option chain data")
+            return None, None
+
+        # Extract IV from ATM strike
+        underlying_price = oc_data['records']['underlyingValue']
+        strike_prices = [x['strikePrice'] for x in oc_data['records']['data']]
+        atm_strike = min(strike_prices, key=lambda x: abs(x - underlying_price))
+        for option in oc_data['records']['data']:
+            if option['strikePrice'] == atm_strike and 'CE' in option:
+                iv = option['CE'].get('impliedVolatility', 0)
+                break
+        else:
+            log("❌ IV not found for ATM strike")
+            return None, None
+
+        # Fetch historical data for RV (20-day annualized volatility)
+        end_date = datetime.datetime.now()
+        start_date = end_date - datetime.timedelta(days=30)
+        historical_data = nsefetch(
+            f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}&from={start_date.strftime('%d-%m-%Y')}&to={end_date.strftime('%d-%m-%Y')}"
+        )
+        if not historical_data or 'data' not in historical_data:
+            log("❌ Failed to fetch historical data")
+            return None, None
+
+        df = pd.DataFrame(historical_data['data'])
+        df['CH_CLOSING_PRICE'] = df['CH_CLOSING_PRICE'].astype(float)
+        returns = df['CH_CLOSING_PRICE'].pct_change().dropna()
+        rv = returns.std() * (252 ** 0.5) * 100  # Annualized volatility
+
+        log(f"Fetched IV: {iv:.2f}, RV: {rv:.2f}")
         return iv, rv
     except Exception as e:
         log(f"❌ Error fetching IV/RV data: {str(e)}")
-        raise  # Raise for debugging
+        return None, None
 
 def should_alert(iv, rv, threshold=5):
     try:
@@ -35,33 +67,33 @@ def should_alert(iv, rv, threshold=5):
         log(f"❌ Error in alert check logic: {str(e)}")
         return False
 
-def send_alert(iv, rv):
+async def send_alert(iv, rv):
     try:
         log(f"🚨 Preparing to send alert for IV={iv}, RV={rv}")
-        # Replace with actual alert logic (e.g., Telegram)
-        log(f"🚨 Sending Alert: IV={iv}, RV={rv}")
+        bot = telegram.Bot(token="7005370202:AAHEy3Oixk3nYCARxr8rUlaTN6LCUHeEDlI")
+        chat_id = "537459100"
+        message = f"🚨 Alert: IV={iv:.2f}, RV={rv:.2f}, Spread={iv-rv:.2f}"
+        await bot.send_message(chat_id=chat_id, text=message)
+        log(f"🚨 Alert sent: {message}")
     except Exception as e:
         log(f"❌ Error sending alert: {str(e)}")
 
 def main():
+    import asyncio
     log("🔄 Starting IV-RV Scan")
-    iv, rv = fetch_iv_rv_data()
+    iv, rv = fetch_iv_rv_data(symbol="NIFTY")
     if iv is None or rv is None:
         log("⚠️ Data fetch failed. Skipping scan cycle.")
         return
     if should_alert(iv, rv, threshold=5):
-        send_alert(iv, rv)
+        asyncio.run(send_alert(iv, rv))
     else:
         log("No alert triggered")
     log("✅ Scan completed.\n")
 
 if __name__ == "__main__":
     log("🚀 Script started")
-    while True:
-        try:
-            log("🔄 Running main loop")
-            main()
-            time.sleep(60 * 15)  # 15 min wait
-        except Exception as e:
-            log(f"🔥 Critical error in main loop: {str(e)}")
-            time.sleep(60)
+    try:
+        main()
+    except Exception as e:
+        log(f"🔥 Critical error in main: {str(e)}")
