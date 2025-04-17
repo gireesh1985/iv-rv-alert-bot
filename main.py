@@ -27,7 +27,7 @@ async def send_telegram_alert(message, is_error=False):
     except Exception as e:
         log(f"❌ Error sending Telegram alert: {str(e)}")
 
-def fetch_iv_rv_data(symbol="NIFTY"):
+def fetch_iv_rv_data(symbol="BANKNIFTY"):
     try:
         log("🔄 Fetching IV-RV data...")
         session = create_session_with_retries()
@@ -40,38 +40,40 @@ def fetch_iv_rv_data(symbol="NIFTY"):
             'Connection': 'keep-alive'
         }
 
-        # Fetch cookies first
+        # Fetch cookies
         session.get("https://www.nseindia.com", headers=headers, timeout=10)
 
-        # Fetch option chain data for IV
+        # Fetch option chain data for IV and OI
         oc_url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
         response = session.get(oc_url, headers=headers, timeout=10)
         if response.status_code != 200:
             error_msg = f"Failed to fetch option chain: HTTP {response.status_code}"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
-            return None, None
-        oc_data = response.json()
+            return None, None, None
 
+        oc_data = response.json()
         if not oc_data or 'records' not in oc_data:
             error_msg = "Invalid option chain data"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
-            return None, None
+            return None, None, None
 
-        # Extract IV from ATM strike
+        # Extract IV and OI for ATM strike
         underlying_price = oc_data['records']['underlyingValue']
         strike_prices = [x['strikePrice'] for x in oc_data['records']['data']]
         atm_strike = min(strike_prices, key=lambda x: abs(x - underlying_price))
         for option in oc_data['records']['data']:
             if option['strikePrice'] == atm_strike and 'CE' in option:
                 iv = option['CE'].get('impliedVolatility', 0)
+                ce_oi = option['CE'].get('openInterest', 0)
+                pe_oi = option['PE'].get('openInterest', 0) if 'PE' in option else 0
                 break
         else:
-            error_msg = "IV not found for ATM strike"
+            error_msg = f"IV/OI not found for ATM strike {atm_strike}"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
-            return None, None
+            return None, None, None
 
         # Fetch historical data for RV
         end_date = datetime.datetime.now()
@@ -85,31 +87,31 @@ def fetch_iv_rv_data(symbol="NIFTY"):
             error_msg = f"Failed to fetch historical data: HTTP {response.status_code}"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
-            return None, None
-        historical_data = response.json()
+            return None, None, None
 
+        historical_data = response.json()
         if not historical_data or 'data' not in historical_data:
             error_msg = "Invalid historical data"
             log(f"❌ {error_msg}")
             asyncio.run(send_telegram_alert(error_msg, is_error=True))
-            return None, None
+            return None, None, None
 
         df = pd.DataFrame(historical_data['data'])
         df['CH_CLOSING_PRICE'] = df['CH_CLOSING_PRICE'].astype(float)
         returns = df['CH_CLOSING_PRICE'].pct_change().dropna()
         rv = returns.std() * (252 ** 0.5) * 100  # Annualized volatility
 
-        log(f"Fetched IV: {iv:.2f}, RV: {rv:.2f}")
-        return iv, rv
+        log(f"Fetched IV: {iv:.2f}, RV: {rv:.2f}, CE OI: {ce_oi}, PE OI: {pe_oi} for ATM strike {atm_strike}")
+        return iv, rv, {'strike': atm_strike, 'ce_oi': ce_oi, 'pe_oi': pe_oi}
     except Exception as e:
         error_msg = f"Error fetching IV/RV data: {str(e)}"
         log(f"❌ {error_msg}")
         asyncio.run(send_telegram_alert(error_msg, is_error=True))
-        return None, None
+        return None, None, None
 
 def should_alert(iv, rv, threshold=5):
     try:
-        log(f"🔄 Checking if alert conditions are met...")
+        log(f Roberta Grok created by xAI f"🔄 Checking if alert conditions are met...")
         if iv is None or rv is None:
             log("⚠️ Missing data, skipping this cycle.")
             return False
@@ -125,22 +127,22 @@ def should_alert(iv, rv, threshold=5):
         log(f"❌ Error in alert check logic: {str(e)}")
         return False
 
-async def send_alert(iv, rv):
+async def send_alert(iv, rv, oi_data):
     try:
         log(f"🚨 Preparing to send alert for IV={iv}, RV={rv}")
-        message = f"IV={iv:.2f}, RV={rv:.2f}, Spread={iv-rv:.2f}"
+        message = f"IV={iv:.2f}, RV={rv:.2f}, Spread={iv-rv:.2f}, Strike={oi_data['strike']}, CE OI={oi_data['ce_oi']}, PE OI={oi_data['pe_oi']}"
         await send_telegram_alert(message)
     except Exception as e:
         log(f"❌ Error sending Telegram alert: {str(e)}")
 
 def main():
     log("🔄 Starting IV-RV Scan")
-    iv, rv = fetch_iv_rv_data(symbol="NIFTY")
-    if iv is None or rv is None:
+    iv, rv, oi_data = fetch_iv_rv_data(symbol="BANKNIFTY")
+    if iv is None or rv is None or oi_data is None:
         log("⚠️ Data fetch failed. Skipping scan cycle.")
         return
     if should_alert(iv, rv, threshold=5):
-        asyncio.run(send_alert(iv, rv))
+        asyncio.run(send_alert(iv, rv, oi_data))
     else:
         log("No alert triggered")
     log("✅ Scan completed.")
