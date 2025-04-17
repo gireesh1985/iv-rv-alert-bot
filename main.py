@@ -3,18 +3,46 @@ import pandas as pd
 from nsepython import nse_optionchain_scrapper, nsefetch
 import telegram
 import asyncio
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Define the log function
 def log(msg):
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
+def create_session_with_retries():
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+    return session
+
+async def send_telegram_alert(message, is_error=False):
+    try:
+        bot = telegram.Bot(token="7005370202:AAHEy3Oixk3nYCARxr8rUlaTN6LCUHeEDlI")
+        chat_id = "537459100"
+        prefix = "❌ ERROR: " if is_error else "🚨 Alert: "
+        await bot.send_message(chat_id=chat_id, text=f"{prefix}{message}")
+        log(f"🚨 Telegram alert sent: {message}")
+    except Exception as e:
+        log(f"❌ Error sending Telegram alert: {str(e)}")
+
 def fetch_iv_rv_data(symbol="NIFTY"):
     try:
         log("🔄 Fetching IV-RV data...")
+        session = create_session_with_retries()
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept-Language': 'en,gu;q=0.9,hi;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br'
+        }
+
         # Fetch option chain data for IV
         oc_data = nse_optionchain_scrapper(symbol)
         if not oc_data or 'records' not in oc_data:
-            log("❌ Failed to fetch option chain data")
+            error_msg = "Failed to fetch option chain data"
+            log(f"❌ {error_msg}")
+            asyncio.run(send_telegram_alert(error_msg, is_error=True))
             return None, None
 
         # Extract IV from ATM strike
@@ -26,17 +54,23 @@ def fetch_iv_rv_data(symbol="NIFTY"):
                 iv = option['CE'].get('impliedVolatility', 0)
                 break
         else:
-            log("❌ IV not found for ATM strike")
+            error_msg = "IV not found for ATM strike"
+            log(f"❌ {error_msg}")
+            asyncio.run(send_telegram_alert(error_msg, is_error=True))
             return None, None
 
-        # Fetch historical data for RV (20-day annualized volatility)
+        # Fetch historical data for RV
         end_date = datetime.datetime.now()
         start_date = end_date - datetime.timedelta(days=30)
-        historical_data = nsefetch(
-            f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}&from={start_date.strftime('%d-%m-%Y')}&to={end_date.strftime('%d-%m-%Y')}"
+        historical_url = (
+            f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}"
+            f"&from={start_date.strftime('%d-%m-%Y')}&to={end_date.strftime('%d-%m-%Y')}"
         )
+        historical_data = nsefetch(historical_url)
         if not historical_data or 'data' not in historical_data:
-            log("❌ Failed to fetch historical data")
+            error_msg = "Failed to fetch historical data"
+            log(f"❌ {error_msg}")
+            asyncio.run(send_telegram_alert(error_msg, is_error=True))
             return None, None
 
         df = pd.DataFrame(historical_data['data'])
@@ -47,7 +81,9 @@ def fetch_iv_rv_data(symbol="NIFTY"):
         log(f"Fetched IV: {iv:.2f}, RV: {rv:.2f}")
         return iv, rv
     except Exception as e:
-        log(f"❌ Error fetching IV/RV data: {str(e)}")
+        error_msg = f"Error fetching IV/RV data: {str(e)}"
+        log(f"❌ {error_msg}")
+        asyncio.run(send_telegram_alert(error_msg, is_error=True))
         return None, None
 
 def should_alert(iv, rv, threshold=5):
@@ -71,11 +107,8 @@ def should_alert(iv, rv, threshold=5):
 async def send_alert(iv, rv):
     try:
         log(f"🚨 Preparing to send alert for IV={iv}, RV={rv}")
-        bot = telegram.Bot(token="7005370202:AAHEy3Oixk3nYCARxr8rUlaTN6LCUHeEDlI")
-        chat_id = "537459100"
-        message = f"🚨 Alert: IV={iv:.2f}, RV={rv:.2f}, Spread={iv-rv:.2f}"
-        await bot.send_message(chat_id=chat_id, text=message)
-        log(f"🚨 Telegram alert sent: {message}")
+        message = f"IV={iv:.2f}, RV={rv:.2f}, Spread={iv-rv:.2f}"
+        await send_telegram_alert(message)
     except Exception as e:
         log(f"❌ Error sending Telegram alert: {str(e)}")
 
@@ -97,3 +130,4 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         log(f"🔥 Critical error in main: {str(e)}")
+        asyncio.run(send_telegram_alert(f"Critical error in script: {str(e)}", is_error=True))
