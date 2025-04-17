@@ -1,71 +1,57 @@
+import time
+import datetime
 
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
+def log(msg):
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
-# Telegram Credentials
-BOT_TOKEN = "7005370202:AAHEy3Oixk3nYCARxr8rUlaTN6LCUHeEDlI"
-CHAT_ID = "537459100"
-
-def send_telegram_alert(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message}
+def fetch_iv_rv_data():
     try:
-        requests.post(url, data=data)
+        # Replace with your actual IV/RV fetching logic
+        iv = 22.5  # Placeholder
+        rv = 17.8  # Placeholder
+        log(f"Fetched IV: {iv}, RV: {rv}")
+        return iv, rv
     except Exception as e:
-        print("Telegram Error:", e)
+        log(f"❌ Error fetching IV/RV data: {e}")
+        return None, None
 
-def fetch_iv(symbol):
-    url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-    }
-    with requests.Session() as s:
-        try:
-            s.get("https://www.nseindia.com", headers=headers, timeout=5)
-            response = s.get(url, headers=headers, timeout=5)
-            data = response.json()
-            iv_list = []
-            for record in data["records"]["data"]:
-                if "CE" in record and record["CE"].get("impliedVolatility"):
-                    iv_list.append(record["CE"]["impliedVolatility"])
-                if "PE" in record and record["PE"].get("impliedVolatility"):
-                    iv_list.append(record["PE"]["impliedVolatility"])
-            return round(sum(iv_list)/len(iv_list), 2) if iv_list else None
-        except:
-            return None
-
-def fetch_realized_vol(symbol):
+def should_alert(iv, rv, threshold=5):
     try:
-        url = f"https://www.niftytrader.in/option-chain/{symbol.lower()}"
-        r = requests.get(url, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        tables = soup.find_all("table")
-        for table in tables:
-            if "Realized Volatility" in table.text:
-                df = pd.read_html(str(table))[0]
-                if "Realized Volatility" in df.columns:
-                    rv = df["Realized Volatility"].iloc[0]
-                    return float(rv.strip('%')) if isinstance(rv, str) else float(rv)
-    except:
-        return None
-
-def scan_iv_rv(symbol):
-    iv = fetch_iv(symbol)
-    rv = fetch_realized_vol(symbol)
-    if iv is not None and rv is not None:
+        if iv is None or rv is None:
+            log("⚠️ Missing data, skipping this cycle.")
+            return False
         spread = iv - rv
-        if spread >= 2:
-            message = f"⚠️ {symbol} ALERT\nIV: {iv}%\nRV: {rv}%\nSpread: {spread:.2f}%"
-            print(message)
-            send_telegram_alert(message)
+        log(f"IV-RV Spread: {spread:.2f}")
+        if spread >= threshold:
+            log(f"🔔 Alert condition met! Spread: {spread:.2f} ≥ Threshold: {threshold}")
+            return True
+        else:
+            log(f"ℹ️ Spread too small. No alert. Threshold: {threshold}")
+            return False
+    except Exception as e:
+        log(f"❌ Error in alert check logic: {e}")
+        return False
+
+def send_alert(iv, rv):
+    try:
+        # Replace with actual Telegram or email logic
+        log(f"🚨 Sending Alert: IV={iv}, RV={rv}")
+    except Exception as e:
+        log(f"❌ Error sending alert: {e}")
 
 def main():
-    print("🔄 Scanning IV-RV once...")
-    scan_iv_rv("NIFTY")
-    scan_iv_rv("BANKNIFTY")
+    log("🔄 Starting IV-RV Scan")
+    iv, rv = fetch_iv_rv_data()
+    if should_alert(iv, rv, threshold=5):
+        send_alert(iv, rv)
+    log("✅ Scan completed.\n")
 
 if __name__ == "__main__":
-    main()
+    while True:
+        try:
+            main()
+            # Wait before next scan (optional: Render restarts anyway)
+            time.sleep(60 * 15)  # 15 min wait if run as loop
+        except Exception as e:
+            log(f"🔥 Critical error in main loop: {e}")
+            time.sleep(60)
