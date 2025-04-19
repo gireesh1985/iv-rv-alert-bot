@@ -1,4 +1,8 @@
 pandas==2.2.2
 requests==2.31.0
 python-telegram-bot==20.7
-urllib3==1.26.18
+urllib3==2.2.2
+cloudscraper==1.2.71
+playwright==1.47.0
+fake-useragent==1.5.1
+nsepy==0.8

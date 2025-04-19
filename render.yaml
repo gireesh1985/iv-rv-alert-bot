@@ -1,8 +1,7 @@
-
 services:
   - type: cron
     name: iv-rv-drift-scanner
     env: python
-    schedule: "*/5 * * * *"
-    buildCommand: ""
+    schedule: "*/15 * * * *"
+    buildCommand: "pip install -r requirements.txt && playwright install chromium"
     startCommand: "python main.py"
